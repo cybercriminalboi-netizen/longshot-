@@ -1,4 +1,4 @@
-package com.example.longshotapp // This will automatically match your package folder
+package com.example.longshotapp
 
 import android.annotation.SuppressLint
 import android.app.*
@@ -73,11 +73,34 @@ class ScreenCaptureService : Service() {
         if (resultCode == Activity.RESULT_OK && dataIntent != null) {
             val mpManager = getSystemService(Context.MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
             mediaProjection = mpManager.getMediaProjection(resultCode, dataIntent)
+            
+            // Initialize engine immediately before token times out
+            initCaptureEngine()
         } else {
             Toast.makeText(this, "Failed to initialize Screen Capture Engine", Toast.LENGTH_SHORT).show()
             stopSelf()
         }
         return START_NOT_STICKY
+    }
+
+    private fun initCaptureEngine() {
+        try {
+            imageReader = ImageReader.newInstance(screenWidth, screenHeight, PixelFormat.RGBA_8888, 2)
+            
+            mediaProjection?.registerCallback(object : MediaProjection.Callback() {
+                override fun onStop() {
+                    cleanUpEngine()
+                }
+            }, Handler(Looper.getMainLooper()))
+
+            virtualDisplay = mediaProjection?.createVirtualDisplay(
+                "LongshotDisplay", screenWidth, screenHeight, screenDensity,
+                DisplayManager.VIRTUAL_DISPLAY_FLAG_AUTO_MIRROR,
+                imageReader?.surface, null, null
+            )
+        } catch (e: Exception) {
+            Toast.makeText(this, "Engine Init Failed: ${e.message}", Toast.LENGTH_SHORT).show()
+        }
     }
 
     private fun startForegroundServiceNotification() {
@@ -175,21 +198,6 @@ class ScreenCaptureService : Service() {
     }
 
     private fun startCaptureLoop() {
-        imageReader = ImageReader.newInstance(screenWidth, screenHeight, PixelFormat.RGBA_8888, 2)
-        
-        // Android 14+ safety callback registration
-        mediaProjection?.registerCallback(object : MediaProjection.Callback() {
-            override fun onStop() {
-                stopCaptureLoop()
-            }
-        }, Handler(Looper.getMainLooper()))
-
-        virtualDisplay = mediaProjection?.createVirtualDisplay(
-            "LongshotDisplay", screenWidth, screenHeight, screenDensity,
-            DisplayManager.VIRTUAL_DISPLAY_FLAG_AUTO_MIRROR,
-            imageReader?.surface, null, null
-        )
-
         val captureRunnable = object : Runnable {
             override fun run() {
                 if (!isCapturing) return
@@ -219,10 +227,6 @@ class ScreenCaptureService : Service() {
 
     private fun stopCaptureLoop() {
         captureHandler.removeCallbacksAndMessages(null)
-        virtualDisplay?.release()
-        virtualDisplay = null
-        imageReader?.close()
-        imageReader = null
     }
 
     private fun processAndStitchImages() {
@@ -236,7 +240,7 @@ class ScreenCaptureService : Service() {
 
         if (stitchedBitmap != null) {
             saveBitmapToStorage(stitchedBitmap)
-            Toast.makeText(this, "Longshot Saved to Internal Storage!", Toast.LENGTH_LONG).show()
+            Toast.makeText(this, "Longshot Saved!", Toast.LENGTH_LONG).show()
         } else {
             Toast.makeText(this, "Stitching failed!", Toast.LENGTH_SHORT).show()
         }
@@ -259,9 +263,17 @@ class ScreenCaptureService : Service() {
         isCapturing = false
     }
 
+    private fun cleanUpEngine() {
+        virtualDisplay?.release()
+        virtualDisplay = null
+        imageReader?.close()
+        imageReader = null
+    }
+
     override fun onDestroy() {
         super.onDestroy()
         stopCaptureLoop()
+        cleanUpEngine()
         mediaProjection?.stop()
         if (::floatingView.isInitialized) {
             windowManager.removeView(floatingView)
