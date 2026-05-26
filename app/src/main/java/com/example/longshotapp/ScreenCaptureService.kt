@@ -167,7 +167,7 @@ class ScreenCaptureService : Service() {
                     MotionEvent.ACTION_MOVE -> {
                         val deltaX = (event.rawX - initialTouchX).toInt()
                         val deltaY = (event.rawY - initialTouchY).toInt()
-                        if (Math.abs(deltaX) > 10 || Math.abs(deltaY) > 10) {
+                        if (Math.abs(deltaX) > 30 || Math.abs(deltaY) > 30) {
                             isMoveAction = true
                         }
                         params.x = initialX + deltaX
@@ -240,7 +240,6 @@ class ScreenCaptureService : Service() {
 
         if (stitchedBitmap != null) {
             saveBitmapToStorage(stitchedBitmap)
-            Toast.makeText(this, "Longshot Saved!", Toast.LENGTH_LONG).show()
         } else {
             Toast.makeText(this, "Stitching failed!", Toast.LENGTH_SHORT).show()
         }
@@ -249,12 +248,37 @@ class ScreenCaptureService : Service() {
     }
 
     private fun saveBitmapToStorage(bitmap: Bitmap) {
-        val directory = File(getExternalFilesDir(null), "Longshots")
-        if (!directory.exists()) directory.mkdirs()
+        val filename = "Longshot_${System.currentTimeMillis()}.png"
+        var fos: java.io.OutputStream? = null
         
-        val file = File(directory, "Longshot_${System.currentTimeMillis()}.png")
-        FileOutputStream(file).use { out ->
-            bitmap.compress(Bitmap.CompressFormat.PNG, 100, out)
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                contentResolver?.also { resolver ->
+                    val contentValues = android.content.ContentValues().apply {
+                        put(android.provider.MediaStore.MediaColumns.DISPLAY_NAME, filename)
+                        put(android.provider.MediaStore.MediaColumns.MIME_TYPE, "image/png")
+                        put(android.provider.MediaStore.MediaColumns.RELATIVE_PATH, android.os.Environment.DIRECTORY_PICTURES + "/Longshots")
+                    }
+                    val imageUri = resolver.insert(android.provider.MediaStore.Images.Media.EXTERNAL_CONTENT_URI, contentValues)
+                    fos = imageUri?.let { resolver.openOutputStream(it) }
+                }
+            } else {
+                val imagesDir = android.os.Environment.getExternalStoragePublicDirectory(android.os.Environment.DIRECTORY_PICTURES).toString() + "/Longshots"
+                val image = java.io.File(imagesDir, filename)
+                if (!image.parentFile!!.exists()) image.parentFile!!.mkdirs()
+                fos = java.io.FileOutputStream(image)
+            }
+
+            fos?.use {
+                bitmap.compress(Bitmap.CompressFormat.PNG, 100, it)
+                Handler(Looper.getMainLooper()).post {
+                    Toast.makeText(this, "Longshot saved to Gallery!", Toast.LENGTH_LONG).show()
+                }
+            }
+        } catch (e: Exception) {
+            Handler(Looper.getMainLooper()).post {
+                Toast.makeText(this, "Failed to save: ${e.message}", Toast.LENGTH_SHORT).show()
+            }
         }
     }
 
