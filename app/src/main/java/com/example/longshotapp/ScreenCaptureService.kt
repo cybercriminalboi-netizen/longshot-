@@ -20,8 +20,7 @@ import android.view.*
 import android.widget.TextView
 import android.widget.Toast
 import androidx.core.app.NotificationCompat
-import java.io.FileOutputStream
-import java.io.File
+import java.io.OutputStream
 
 class ScreenCaptureService : Service() {
 
@@ -33,9 +32,7 @@ class ScreenCaptureService : Service() {
     private var virtualDisplay: VirtualDisplay? = null
     private var imageReader: ImageReader? = null
     
-    private var isCapturing = false
     private val capturedBitmaps = ArrayList<Bitmap>()
-    private val captureHandler = Handler(Looper.getMainLooper())
     
     private var screenWidth = 0
     private var screenHeight = 0
@@ -73,11 +70,9 @@ class ScreenCaptureService : Service() {
         if (resultCode == Activity.RESULT_OK && dataIntent != null) {
             val mpManager = getSystemService(Context.MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
             mediaProjection = mpManager.getMediaProjection(resultCode, dataIntent)
-            
-            // Initialize engine immediately before token times out
             initCaptureEngine()
         } else {
-            Toast.makeText(this, "Failed to initialize Screen Capture Engine", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this, "Failed to initialize Capture Engine", Toast.LENGTH_SHORT).show()
             stopSelf()
         }
         return START_NOT_STICKY
@@ -112,8 +107,8 @@ class ScreenCaptureService : Service() {
         }
 
         val notification = NotificationCompat.Builder(this, channelId)
-            .setContentTitle("Longshot Active")
-            .setContentText("Floating icon overlay is active.")
+            .setContentTitle("Longshot Manual Mode")
+            .setContentText("Tap widget to capture segment. Hold to finish.")
             .setSmallIcon(android.R.drawable.ic_menu_camera)
             .build()
 
@@ -146,47 +141,67 @@ class ScreenCaptureService : Service() {
         windowManager.addView(floatingView, params)
 
         val buttonText = floatingView.findViewById<TextView>(R.id.button_text)
+        buttonText.text = "START"
+
+        var isFirstCapture = true
+
+        val gestureDetector = GestureDetector(this, object : GestureDetector.SimpleOnGestureListener() {
+            override fun onSingleTapConfirmed(e: MotionEvent): Boolean {
+                if (isFirstCapture) {
+                    // First tap: Just capture the initial screen
+                    captureSingleFrame {
+                        buttonText.text = "SCROLL"
+                        isFirstCapture = false
+                    }
+                } else {
+                    // Subsequent taps: Hide, Auto-Scroll, Wait, Capture, Show
+                    floatingView.visibility = View.INVISIBLE
+                    val scroller = LongshotAccessibilityService.instance
+                    
+                    if (scroller != null) {
+                        scroller.autoScrollDown {
+                            captureSingleFrame {
+                                floatingView.visibility = View.VISIBLE
+                            }
+                        }
+                    } else {
+                        floatingView.visibility = View.VISIBLE
+                        Toast.makeText(applicationContext, "Please enable Accessibility Permission!", Toast.LENGTH_LONG).show()
+                    }
+                }
+                return true
+            }
+
+            override fun onLongPress(e: MotionEvent) {
+                buttonText.text = "STITCHING..."
+                processAndStitchImages()
+            }
+        })
 
         floatingView.setOnTouchListener(object : View.OnTouchListener {
             private var initialX = 0
             private var initialY = 0
             private var initialTouchX = 0f
             private var initialTouchY = 0f
-            private var touchStartTime = 0L
 
             override fun onTouch(v: View?, event: MotionEvent): Boolean {
+                if (gestureDetector.onTouchEvent(event)) return true
+
                 when (event.action) {
                     MotionEvent.ACTION_DOWN -> {
                         initialX = params.x
                         initialY = params.y
                         initialTouchX = event.rawX
                         initialTouchY = event.rawY
-                        touchStartTime = System.currentTimeMillis()
                         return true
                     }
                     MotionEvent.ACTION_MOVE -> {
                         val deltaX = (event.rawX - initialTouchX).toInt()
                         val deltaY = (event.rawY - initialTouchY).toInt()
-                        params.x = initialX + deltaX
-                        params.y = initialY + deltaY
-                        windowManager.updateViewLayout(floatingView, params)
-                        return true
-                    }
-                    MotionEvent.ACTION_UP -> {
-                        val touchDuration = System.currentTimeMillis() - touchStartTime
-                        // If pressed for less than 200ms, it's a tap, regardless of movement
-                        if (touchDuration < 200) {
-                            if (!isCapturing) {
-                                isCapturing = true
-                                buttonText.text = "STOP"
-                                capturedBitmaps.clear()
-                                startCaptureLoop()
-                            } else {
-                                isCapturing = false
-                                buttonText.text = "WAIT..."
-                                stopCaptureLoop()
-                                processAndStitchImages()
-                            }
+                        if (Math.abs(deltaX) > 15 || Math.abs(deltaY) > 15) {
+                            params.x = initialX + deltaX
+                            params.y = initialY + deltaY
+                            windowManager.updateViewLayout(floatingView, params)
                         }
                         return true
                     }
@@ -196,11 +211,9 @@ class ScreenCaptureService : Service() {
         })
     }
 
-    private fun startCaptureLoop() {
-        val captureRunnable = object : Runnable {
-            override fun run() {
-                if (!isCapturing) return
-                
+    private fun captureSingleFrame(onCaptureComplete: () -> Unit) {
+        Handler(Looper.getMainLooper()).postDelayed({
+            try {
                 imageReader?.acquireLatestImage()?.use { image ->
                     val planes = image.planes
                     val buffer = planes[0].buffer
@@ -216,22 +229,21 @@ class ScreenCaptureService : Service() {
                     
                     val cleanBitmap = Bitmap.createBitmap(bitmap, 0, 0, screenWidth, screenHeight)
                     capturedBitmaps.add(cleanBitmap)
+                    
+                    Toast.makeText(this, "Frame ${capturedBitmaps.size} Captured", Toast.LENGTH_SHORT).show()
                 }
-                
-                captureHandler.postDelayed(this, 400)
+            } catch (e: Exception) {
+                Toast.makeText(this, "Capture missed, try again!", Toast.LENGTH_SHORT).show()
+            } finally {
+                onCaptureComplete()
             }
-        }
-        captureHandler.post(captureRunnable)
-    }
-
-    private fun stopCaptureLoop() {
-        captureHandler.removeCallbacksAndMessages(null)
+        }, 150) // Tiny delay to ensure button is fully hidden before taking the shot
     }
 
     private fun processAndStitchImages() {
         if (capturedBitmaps.isEmpty()) {
             Toast.makeText(this, "No frames captured!", Toast.LENGTH_SHORT).show()
-            resetWidget()
+            stopSelf()
             return
         }
 
@@ -243,12 +255,13 @@ class ScreenCaptureService : Service() {
             Toast.makeText(this, "Stitching failed!", Toast.LENGTH_SHORT).show()
         }
         
-        resetWidget()
+        // This stops the service, destroys the capture engine, and removes the button completely
+        stopSelf()
     }
 
     private fun saveBitmapToStorage(bitmap: Bitmap) {
         val filename = "Longshot_${System.currentTimeMillis()}.png"
-        var fos: java.io.OutputStream? = null
+        var fos: OutputStream? = null
         
         try {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
@@ -270,20 +283,11 @@ class ScreenCaptureService : Service() {
 
             fos?.use {
                 bitmap.compress(Bitmap.CompressFormat.PNG, 100, it)
-                Handler(Looper.getMainLooper()).post {
-                    Toast.makeText(this, "Longshot saved to Gallery!", Toast.LENGTH_LONG).show()
-                }
+                Toast.makeText(this, "Longshot saved to Gallery!", Toast.LENGTH_LONG).show()
             }
         } catch (e: Exception) {
-            Handler(Looper.getMainLooper()).post {
-                Toast.makeText(this, "Failed to save: ${e.message}", Toast.LENGTH_SHORT).show()
-            }
+            Toast.makeText(this, "Failed to save: ${e.message}", Toast.LENGTH_SHORT).show()
         }
-    }
-
-    private fun resetWidget() {
-        floatingView.findViewById<TextView>(R.id.button_text).text = "REC"
-        isCapturing = false
     }
 
     private fun cleanUpEngine() {
@@ -295,7 +299,6 @@ class ScreenCaptureService : Service() {
 
     override fun onDestroy() {
         super.onDestroy()
-        stopCaptureLoop()
         cleanUpEngine()
         mediaProjection?.stop()
         if (::floatingView.isInitialized) {
