@@ -1,4 +1,4 @@
-package com.example.longshotapp
+package com.example.longshotapp // This will automatically match your package folder
 
 import android.graphics.Bitmap
 import android.graphics.Canvas
@@ -62,10 +62,10 @@ object ImageStitcher {
         val heightA = bitmapA.height
         val heightB = bitmapB.height
 
-        // To save memory and performance, scan a max of half the screen height for matching areas
+        // Scan a max of half the screen height for matching areas
         val maxScanHeight = Math.min(heightA, heightB) / 2
         
-        // Sample columns across the screen width to speed up row-by-row comparisons (e.g., check every 20th pixel)
+        // Sample columns across the screen width to speed up row-by-row comparisons
         val samplePoints = (0 until width step 20).toList()
 
         // Scan row by row backwards from the bottom of bitmapA

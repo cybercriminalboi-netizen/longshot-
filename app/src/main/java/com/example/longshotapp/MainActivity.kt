@@ -1,4 +1,4 @@
-package com.example.longshotapp
+package com.example.longshotapp // This will automatically match your package folder
 
 import android.content.Context
 import android.content.Intent
@@ -29,7 +29,6 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun checkAndStartService() {
-        // 1. Check Overlay Permission (Draw over other apps)
         if (!Settings.canDrawOverlays(this)) {
             val intent = Intent(
                 Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
@@ -37,7 +36,6 @@ class MainActivity : AppCompatActivity() {
             )
             startActivityForResult(intent, OVERLAY_PERMISSION_REQ_CODE)
         } else {
-            // 2. Overlay permission granted, now request Screen Capture permission
             requestScreenCapturePermission()
         }
     }
@@ -62,7 +60,6 @@ class MainActivity : AppCompatActivity() {
 
         if (requestCode == MEDIA_PROJECTION_REQ_CODE) {
             if (resultCode == RESULT_OK && data != null) {
-                // 3. Both permissions granted! Launch the background service and pass the capture intent data
                 val serviceIntent = Intent(this, ScreenCaptureService::class.java).apply {
                     putExtra("RESULT_CODE", resultCode)
                     putExtra("DATA_INTENT", data)
@@ -73,7 +70,6 @@ class MainActivity : AppCompatActivity() {
                 } else {
                     startService(serviceIntent)
                 }
-                // Minimize the app so the user can see their target screen
                 moveTaskToBack(true)
             } else {
                 Toast.makeText(this, "Screen capture permission denied!", Toast.LENGTH_SHORT).show()

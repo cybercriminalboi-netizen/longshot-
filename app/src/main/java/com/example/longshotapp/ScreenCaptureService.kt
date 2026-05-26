@@ -1,4 +1,4 @@
-package com.example.longshotapp
+package com.example.longshotapp // This will automatically match your package folder
 
 import android.annotation.SuppressLint
 import android.app.*
@@ -47,10 +47,8 @@ class ScreenCaptureService : Service() {
         super.onCreate()
         windowManager = getSystemService(WINDOW_SERVICE) as WindowManager
         
-        // Get screen metrics
         val displayMetrics = DisplayMetrics()
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-            val display = display()
             display?.getRealMetrics(displayMetrics)
         } else {
             @Suppress("DEPRECATION")
@@ -120,10 +118,8 @@ class ScreenCaptureService : Service() {
 
         windowManager.addView(floatingView, params)
 
-        val floatingButton = floatingView.findViewById<View>(R.id.floating_button_click)
         val buttonText = floatingView.findViewById<TextView>(R.id.button_text)
 
-        // Make the floating widget draggable around the screen
         floatingView.setOnTouchListener(object : View.OnTouchListener {
             private var initialX = 0
             private var initialY = 0
@@ -154,7 +150,6 @@ class ScreenCaptureService : Service() {
                     }
                     MotionEvent.ACTION_UP -> {
                         if (!isMoveAction) {
-                            // It was a click! Toggle capturing states
                             if (!isCapturing) {
                                 isCapturing = true
                                 buttonText.text = "STOP"
@@ -176,7 +171,6 @@ class ScreenCaptureService : Service() {
     }
 
     private fun startCaptureLoop() {
-        // Setup ImageReader to receive screen data frames
         imageReader = ImageReader.newInstance(screenWidth, screenHeight, PixelFormat.RGBA_8888, 2)
         virtualDisplay = mediaProjection?.createVirtualDisplay(
             "LongshotDisplay", screenWidth, screenHeight, screenDensity,
@@ -184,7 +178,6 @@ class ScreenCaptureService : Service() {
             imageReader?.surface, null, null
         )
 
-        // Periodically extract the image frame while user is scrolling (every 400ms)
         val captureRunnable = object : Runnable {
             override fun run() {
                 if (!isCapturing) return
@@ -202,12 +195,11 @@ class ScreenCaptureService : Service() {
                     )
                     bitmap.copyPixelsFromBuffer(buffer)
                     
-                    // Crop padding out if it exists
                     val cleanBitmap = Bitmap.createBitmap(bitmap, 0, 0, screenWidth, screenHeight)
                     capturedBitmaps.add(cleanBitmap)
                 }
                 
-                captureHandler.postDelayed(this, 400) // Adjust delay if needed
+                captureHandler.postDelayed(this, 400)
             }
         }
         captureHandler.post(captureRunnable)
@@ -228,7 +220,6 @@ class ScreenCaptureService : Service() {
             return
         }
 
-        // We will hand over our captured list to our next file: ImageStitcher
         val stitchedBitmap = ImageStitcher.stitch(capturedBitmaps)
 
         if (stitchedBitmap != null) {
