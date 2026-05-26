@@ -152,7 +152,7 @@ class ScreenCaptureService : Service() {
             private var initialY = 0
             private var initialTouchX = 0f
             private var initialTouchY = 0f
-            private var isMoveAction = false
+            private var touchStartTime = 0L
 
             override fun onTouch(v: View?, event: MotionEvent): Boolean {
                 when (event.action) {
@@ -161,22 +161,21 @@ class ScreenCaptureService : Service() {
                         initialY = params.y
                         initialTouchX = event.rawX
                         initialTouchY = event.rawY
-                        isMoveAction = false
+                        touchStartTime = System.currentTimeMillis()
                         return true
                     }
                     MotionEvent.ACTION_MOVE -> {
                         val deltaX = (event.rawX - initialTouchX).toInt()
                         val deltaY = (event.rawY - initialTouchY).toInt()
-                        if (Math.abs(deltaX) > 30 || Math.abs(deltaY) > 30) {
-                            isMoveAction = true
-                        }
                         params.x = initialX + deltaX
                         params.y = initialY + deltaY
                         windowManager.updateViewLayout(floatingView, params)
                         return true
                     }
                     MotionEvent.ACTION_UP -> {
-                        if (!isMoveAction) {
+                        val touchDuration = System.currentTimeMillis() - touchStartTime
+                        // If pressed for less than 200ms, it's a tap, regardless of movement
+                        if (touchDuration < 200) {
                             if (!isCapturing) {
                                 isCapturing = true
                                 buttonText.text = "STOP"
