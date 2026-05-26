@@ -176,6 +176,14 @@ class ScreenCaptureService : Service() {
 
     private fun startCaptureLoop() {
         imageReader = ImageReader.newInstance(screenWidth, screenHeight, PixelFormat.RGBA_8888, 2)
+        
+        // Android 14+ safety callback registration
+        mediaProjection?.registerCallback(object : MediaProjection.Callback() {
+            override fun onStop() {
+                stopCaptureLoop()
+            }
+        }, Handler(Looper.getMainLooper()))
+
         virtualDisplay = mediaProjection?.createVirtualDisplay(
             "LongshotDisplay", screenWidth, screenHeight, screenDensity,
             DisplayManager.VIRTUAL_DISPLAY_FLAG_AUTO_MIRROR,
