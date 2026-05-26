@@ -47,16 +47,20 @@ class ScreenCaptureService : Service() {
         super.onCreate()
         windowManager = getSystemService(WINDOW_SERVICE) as WindowManager
         
-        val displayMetrics = DisplayMetrics()
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-            display?.getRealMetrics(displayMetrics)
+            val windowMetrics = windowManager.currentWindowMetrics
+            val bounds = windowMetrics.bounds
+            screenWidth = bounds.width()
+            screenHeight = bounds.height()
+            screenDensity = resources.configuration.densityDpi
         } else {
+            val displayMetrics = DisplayMetrics()
             @Suppress("DEPRECATION")
             windowManager.defaultDisplay.getMetrics(displayMetrics)
+            screenWidth = displayMetrics.widthPixels
+            screenHeight = displayMetrics.heightPixels
+            screenDensity = displayMetrics.densityDpi
         }
-        screenWidth = displayMetrics.widthPixels
-        screenHeight = displayMetrics.heightPixels
-        screenDensity = displayMetrics.densityDpi
 
         startForegroundServiceNotification()
         createFloatingWidget()
