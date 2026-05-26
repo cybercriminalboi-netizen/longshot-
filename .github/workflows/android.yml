@@ -2,11 +2,11 @@ name: Android CI (Generate and Release APK)
 
 on:
   push:
-    branches: [ "main", "master" ]
+    branches: [ "**" ]
     tags:
       - 'v*'
   pull_request:
-    branches: [ "main", "master" ]
+    branches: [ "**" ]
 
 # Permissions required to create a draft/release and upload assets on GitHub
 permissions:
